@@ -6,6 +6,7 @@
 
 #include "envoy/buffer/buffer.h"
 #include "envoy/common/pure.h"
+#include "envoy/grpc/status.h"
 #include "envoy/http/header_map.h"
 #include "envoy/http/metadata_interface.h"
 #include "envoy/http/protocol.h"
@@ -185,6 +186,22 @@ public:
    * @param trailers supplies the decoded trailers.
    */
   virtual void decodeTrailers(RequestTrailerMapPtr&& trailers) PURE;
+
+  /**
+   * Called if the codec needs to send a protocol error.
+   * @param is_grpc_request indicates if the request is a gRPC request
+   * @param code supplies the HTTP error code to send.
+   * @param body supplies an optional body to send with the local reply.
+   * @param modify_headers supplies a way to edit headers before they are sent downstream.
+   * @param is_head_request indicates if the request is a HEAD request
+   * @param grpc_status an optional gRPC status for gRPC requests
+   * @param details details about the source of the error, for debug purposes
+   */
+  virtual void sendLocalReply(bool is_grpc_request, Code code, absl::string_view body,
+                              const std::function<void(ResponseHeaderMap& headers)>& modify_headers,
+                              bool is_head_request,
+                              const absl::optional<Grpc::Status::GrpcStatus> grpc_status,
+                              absl::string_view details) PURE;
 };
 
 /**
@@ -320,6 +337,13 @@ public:
    * with the stream.
    */
   virtual const Network::Address::InstanceConstSharedPtr& connectionLocalAddress() PURE;
+
+  /**
+   * Set the flush timeout for the stream. At the codec level this is used to bound the amount of
+   * time the codec will wait to flush body data pending open stream window. It does *not* count
+   * small window updates as satisfying the idle timeout as this is a potential DoS vector.
+   */
+  virtual void setFlushTimeout(std::chrono::milliseconds timeout) PURE;
 };
 
 /**
